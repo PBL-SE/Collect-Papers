@@ -22,7 +22,7 @@ for category in categories:
     try:
         # Fetch and parse data
         xml_data = fetch_arxiv_data(category=f"cs.{category}", max_results=100)
-        papers = parse_arxiv_data(xml_data)
+        papers = parse_arxiv_data(xml_data, category)
         all_papers.extend(papers)
     except Exception as e:
         print(f"Error fetching papers for category cs.{category}: {e}")
