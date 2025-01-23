@@ -11,6 +11,9 @@ os.makedirs(output_dir, exist_ok=True)
 # ArXiv API base URL
 base_url = "http://export.arxiv.org/api/query"
 
+# OpenCitations API base URL
+opencitations_base_url = "https://opencitations.net/index/coci/api/v1/references/"
+
 # Function to fetch data from arXiv API
 def fetch_arxiv_data(category="cs.ai", max_results=100):
     params = {
@@ -24,6 +27,27 @@ def fetch_arxiv_data(category="cs.ai", max_results=100):
     else:
         raise Exception(f"Failed to fetch data: {response.status_code}")
 
+# Function to fetch references from OpenCitations
+def fetch_references_from_opencitations(doi):
+    if not doi:
+        return []
+    
+    url = f"{opencitations_base_url}{doi}"
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        data = response.json()
+        
+        # Extract the 'cited' DOIs (references cited by the queried paper)
+        references = [entry['cited'] for entry in data]
+        
+        # Deduplicate the references
+        unique_references = list(set(references))
+        
+        return unique_references
+    else:
+        print(f"Failed to fetch references for DOI {doi}: {response.status_code}")
+        return []
 
 def generate_id():
     return str(uuid.uuid4())
@@ -46,14 +70,14 @@ def parse_arxiv_data(xml_data, category):
         if doi_link is not None and 'href' in doi_link.attrib:
             doi = doi_link.attrib['href'].replace("http://dx.doi.org/", "")
 
+        # Fetch references from OpenCitations
+        cited_papers = fetch_references_from_opencitations(doi)
+
         # Generate a unique paper ID
         paper_id = generate_id()
 
         # Generate unique author IDs and map them
         author_ids = [generate_id() for _ in authors]
-
-        # Cited papers: Placeholder for now
-        cited_papers = []
 
         papers.append({
             "Paper ID": paper_id,
@@ -71,15 +95,8 @@ def parse_arxiv_data(xml_data, category):
 
 # Function to save data into a CSV file
 def save_to_csv(papers, filename):
-    # Define the fieldnames to match the new CSV structure
     fieldnames = ["Paper ID", "Title", "Authors", "Published", "PDF Link", "Category", "DOI", "Author IDs", "Cited Papers"]
-    
-    # Open the file in write mode and ensure proper encoding
     with open(filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
-        
-        # Write the header row
         writer.writeheader()
-        
-        # Write all the paper data
         writer.writerows(papers)
