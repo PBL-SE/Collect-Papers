@@ -1,4 +1,4 @@
-from utils import fetch_arxiv_data, parse_arxiv_data, save_to_csv
+from collect_papers.utils import fetch_arxiv_data, parse_arxiv_data, save_to_csv
 import os
 
 # List of categories to query
