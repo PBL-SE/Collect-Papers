@@ -1,7 +1,6 @@
 import requests
 import csv
 import os
-import uuid
 from xml.etree import ElementTree as ET
 
 # Ensure the output directory exists
@@ -15,7 +14,7 @@ base_url = "http://export.arxiv.org/api/query"
 opencitations_base_url = "https://opencitations.net/index/coci/api/v1/references/"
 
 # Function to fetch data from arXiv API
-def fetch_arxiv_data(category="cs.ai", max_results=100):
+def fetch_arxiv_data(category, max_results):
     params = {
         "search_query": f"cat:{category}",
         "start": 0,
@@ -37,33 +36,40 @@ def fetch_references_from_opencitations(doi):
     
     if response.status_code == 200:
         data = response.json()
-        
-        # Extract the 'cited' DOIs (references cited by the queried paper)
         references = [entry['cited'] for entry in data]
-        
-        # Deduplicate the references
-        unique_references = list(set(references))
-        
-        return unique_references
+        return list(set(references))  # Deduplicate references
     else:
         print(f"Failed to fetch references for DOI {doi}: {response.status_code}")
         return []
 
-def generate_id():
-    return str(uuid.uuid4())
-
+# Function to parse XML response and extract metadata
 # Function to parse XML response and extract metadata
 def parse_arxiv_data(xml_data, category):
-    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    namespace = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
     root = ET.fromstring(xml_data)
     papers = []
 
     for entry in root.findall("atom:entry", namespace):
+        arxiv_id = entry.find("atom:id", namespace).text.split("/")[-1]  # Extract arXiv ID
         title = entry.find("atom:title", namespace).text.strip()
-        authors = [author.find("atom:name", namespace).text.strip() for author in entry.findall("atom:author", namespace)]
+        authors = []
+        
+        for author in entry.findall("atom:author", namespace):
+            name = author.find("atom:name", namespace).text.strip()
+            affiliation = author.find("arxiv:affiliation", namespace)
+            affiliation_text = affiliation.text.strip() if affiliation is not None else "Unknown"
+            authors.append(f"{name} ({affiliation_text})")
+
         published = entry.find("atom:published", namespace).text.strip()
         pdf_link = entry.find("atom:link[@type='application/pdf']", namespace).attrib["href"]
-
+        summary = entry.find("atom:summary", namespace).text.strip()
+        
+        comment = entry.find("arxiv:comment", namespace)
+        comment_text = comment.text.strip() if comment is not None else "None"
+        
+        journal_ref = entry.find("arxiv:journal_ref", namespace)
+        journal_ref_text = journal_ref.text.strip() if journal_ref is not None else "None"
+        
         # Extract DOI (if available)
         doi = None
         doi_link = entry.find("atom:link[@rel='related'][@title='doi']", namespace)
@@ -73,30 +79,27 @@ def parse_arxiv_data(xml_data, category):
         # Fetch references from OpenCitations
         cited_papers = fetch_references_from_opencitations(doi)
 
-        # Generate a unique paper ID
-        paper_id = generate_id()
-
-        # Generate unique author IDs and map them
-        author_ids = [generate_id() for _ in authors]
-
         papers.append({
-            "Paper ID": paper_id,
+            "ArXiv ID": arxiv_id,
             "Title": title,
             "Authors": ", ".join(authors),
             "Published": published,
             "PDF Link": pdf_link,
+            "Summary": summary,
             "Category": category,
+            "Comment": comment_text,
+            "Journal Ref": journal_ref_text,
             "DOI": doi,
-            "Author IDs": ", ".join(author_ids),
             "Cited Papers": ", ".join(cited_papers)
         })
-
+    
     return papers
 
 # Function to save data into a CSV file
 def save_to_csv(papers, filename):
-    fieldnames = ["Paper ID", "Title", "Authors", "Published", "PDF Link", "Category", "DOI", "Author IDs", "Cited Papers"]
+    fieldnames = ["ArXiv ID", "Title", "Authors", "Published", "PDF Link", "Category", "DOI", "Cited Papers", "Comment", "Journal Ref", "Summary"]
     with open(filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(papers)
+
